@@ -218,9 +218,12 @@ def extract_name(raw):
 def search_users(name):
     import urllib.parse
     url  = f"{BASE_URL}/lines/data"
-    body = (
-        f"draw=1&start=0&length=25"
-        f"&search[value]={urllib.parse.quote(name.strip())}"
+    # Use only the first word of the search for server-side query
+    # so minor typos in last name still return candidates
+    first_word = name.strip().split()[0] if name.strip() else name.strip()
+    body_str = (
+        f"draw=1&start=0&length=50"
+        f"&search[value]={urllib.parse.quote(first_word)}"
         f"&reseller={RESELLER_ID}"
         f"&{COLUMNS_PAYLOAD}"
     )
@@ -229,7 +232,7 @@ def search_users(name):
         try:
             r = _session.post(
                 url,
-                data=body,
+                data=body_str,
                 headers={"content-type": "application/x-www-form-urlencoded; charset=UTF-8"},
                 timeout=20,
                 allow_redirects=False,
@@ -280,28 +283,19 @@ def search_users(name):
     return result or []
 
 # =========================
-# FIND USER (fuzzy matching)
+# FIND USER (fuzzy matching via difflib)
 # =========================
 
-def _similarity(a, b):
-    """Simple character-level similarity ratio."""
-    a, b = a.lower(), b.lower()
-    if a == b:
-        return 1.0
-    if not a or not b:
-        return 0.0
-    # Count matching characters within a sliding window
-    matches = 0
-    for i, ch in enumerate(a):
-        if ch in b[max(0,i-2):i+3]:
-            matches += 1
-    return matches / max(len(a), len(b))
+from difflib import SequenceMatcher
+
+def _fuzzy_score(a, b):
+    return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
 def find_user(search, users):
     search     = " ".join(search.lower().strip().split())
     parts      = search.split()
     matches    = []
-    THRESHOLD  = 0.75  # 75% similarity required
+    THRESHOLD  = 0.75
 
     for user in users:
         note = extract_name(user.get("admin_notes_show", ""))
@@ -311,20 +305,20 @@ def find_user(search, users):
         note_parts = note.split()
 
         if len(parts) >= 2:
-            # Full name search: try exact first, then fuzzy per word
+            # Try exact match first
             if search in note:
                 matches.append(user)
-            elif len(note_parts) >= 2:
-                # Match each search word against closest note word
+            else:
+                # Fuzzy match each word against note words
                 score = sum(
-                    max(_similarity(p, n) for n in note_parts)
+                    max(_fuzzy_score(p, n) for n in note_parts)
                     for p in parts
                 ) / len(parts)
                 if score >= THRESHOLD:
                     matches.append(user)
         else:
-            # Single word: match against last name or any word
-            best = max(_similarity(parts[0], n) for n in note_parts) if note_parts else 0
+            # Single word: fuzzy match against any word in note
+            best = max(_fuzzy_score(parts[0], n) for n in note_parts) if note_parts else 0
             if best >= THRESHOLD:
                 matches.append(user)
 

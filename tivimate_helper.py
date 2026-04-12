@@ -82,14 +82,22 @@ def _do_login():
         options.add_argument("--window-size=1280,800")
         options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36")
 
-        # Use Brave browser (Chromium-based, works with chromedriver)
+        # Auto-detect browser: Brave (Mac), Chromium (Linux/Render), fallback
         import os
-        brave_path = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+        brave_path    = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+        chromium_path = "/usr/bin/chromium"
+        chromium_alt  = "/usr/bin/chromium-browser"
         if os.path.exists(brave_path):
             options.binary_location = brave_path
             print(f"AUTH: Using Brave browser")
+        elif os.path.exists(chromium_path):
+            options.binary_location = chromium_path
+            print(f"AUTH: Using Chromium")
+        elif os.path.exists(chromium_alt):
+            options.binary_location = chromium_alt
+            print(f"AUTH: Using Chromium (alt path)")
         else:
-            print(f"AUTH WARNING: Brave not found at {brave_path}")
+            print(f"AUTH: Using default browser")
 
         from selenium.webdriver.chrome.service import Service as ChromeService
         try:
@@ -196,6 +204,9 @@ threading.Thread(target=ensure_authed, daemon=True).start()
 def extract_name(raw):
     if not raw:
         return ""
+    clipboard_match = re.search('data-clipboard-text=.([^"\']+)', raw)
+    if clipboard_match:
+        return clipboard_match.group(1).strip().lower()
     clean = re.sub('<.*?>', '', raw)
     clean = " ".join(clean.strip().split())
     return clean.lower()
@@ -269,25 +280,52 @@ def search_users(name):
     return result or []
 
 # =========================
-# FIND USER
+# FIND USER (fuzzy matching)
 # =========================
 
+def _similarity(a, b):
+    """Simple character-level similarity ratio."""
+    a, b = a.lower(), b.lower()
+    if a == b:
+        return 1.0
+    if not a or not b:
+        return 0.0
+    # Count matching characters within a sliding window
+    matches = 0
+    for i, ch in enumerate(a):
+        if ch in b[max(0,i-2):i+3]:
+            matches += 1
+    return matches / max(len(a), len(b))
+
 def find_user(search, users):
-    search  = " ".join(search.lower().strip().split())
-    parts   = search.split()
-    matches = []
+    search     = " ".join(search.lower().strip().split())
+    parts      = search.split()
+    matches    = []
+    THRESHOLD  = 0.75  # 75% similarity required
 
     for user in users:
         note = extract_name(user.get("admin_notes_show", ""))
         if not note:
             continue
 
+        note_parts = note.split()
+
         if len(parts) >= 2:
+            # Full name search: try exact first, then fuzzy per word
             if search in note:
                 matches.append(user)
+            elif len(note_parts) >= 2:
+                # Match each search word against closest note word
+                score = sum(
+                    max(_similarity(p, n) for n in note_parts)
+                    for p in parts
+                ) / len(parts)
+                if score >= THRESHOLD:
+                    matches.append(user)
         else:
-            name_parts = note.split()
-            if name_parts and parts[0] == name_parts[-1]:
+            # Single word: match against last name or any word
+            best = max(_similarity(parts[0], n) for n in note_parts) if note_parts else 0
+            if best >= THRESHOLD:
                 matches.append(user)
 
     return matches
@@ -393,4 +431,6 @@ def admin():
 # =========================
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5050)
+    import os
+    port = int(os.environ.get("PORT", 5050))
+    app.run(host="0.0.0.0", port=port)

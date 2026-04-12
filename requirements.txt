@@ -1,3 +1,4 @@
 flask
 requests
-gunicorn
+selenium
+webdriver-manager

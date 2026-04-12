@@ -139,7 +139,7 @@ def find_user(search, users):
             if search in note:
                 matches.append(user)
 
-        # LAST NAME ONLY (STRICT)
+        # LAST NAME ONLY
         else:
             name_parts = note.split()
             if parts[0] == name_parts[-1]:
@@ -226,18 +226,11 @@ def home():
         <button type="submit">Lookup</button>
     </form>
 
-    <br>
-
-    <b>Having trouble connecting?</b><br>
-    <a href="https://epg.run/unblock/" target="_blank">
-    Click here for ISP unblock guide
-    </a>
-
     <p>{{result|safe}}</p>
     """, result=result)
 
 # =========================
-# ADMIN PAGE (SECURE)
+# ADMIN PAGE
 # =========================
 @app.route("/admin", methods=["GET", "POST"])
 def admin():

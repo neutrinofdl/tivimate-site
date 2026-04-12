@@ -1,117 +1,59 @@
 from flask import Flask, request, render_template_string
 import requests
 import re
-import time
-import threading
 
 app = Flask(__name__)
 
 # =========================
-# CONFIG — only edit this section
+# CONFIG
 # =========================
 
 BASE_URL = "https://alt.sanctumpanel.com"
-ADMIN_USERNAME = "mattdrudge"   # 🔐 Panel login username
-ADMIN_PASSWORD = "B4-&G>e3509K"   # 🔐 Panel login password
-APP_PASSWORD   = "TiviMateAdmin!2026"    # 🔐 Password for /admin page
-RESELLER_ID    = 59
+ADMIN_PASSWORD = "CHANGE_THIS_PASSWORD"  # 🔐 CHANGE THIS
 
-# =========================
-# SESSION STATE
-# =========================
-
-_session = requests.Session()
-_session_lock = threading.Lock()
-_last_auth_time = 0
-AUTH_TTL = 1800  # re-auth after 30 minutes max (tokens usually last longer)
+TOKENS = {
+    "xsrf": "",
+    "session": "",
+    "csrf": ""
+}
 
 # =========================
 # KEEP ALIVE (UPTIMEROBOT)
 # =========================
-
 @app.route("/ping")
 def ping():
     return "OK"
 
 # =========================
-# AUTO AUTHENTICATION
+# PARSE CURL (AUTO TOKEN EXTRACTION)
 # =========================
+def parse_curl(curl_text):
+    xsrf = ""
+    session = ""
+    csrf = ""
 
-def _do_login():
-    """
-    Full Laravel login flow:
-      1. GET /login  → scrape CSRF token from the page, grab XSRF-TOKEN cookie
-      2. POST /login → submit credentials, get authenticated laravel_session
-    Returns True on success, False on failure.
-    """
-    global _last_auth_time
+    cookie_match = re.search(r"-b '([^']+)'", curl_text)
+    if cookie_match:
+        cookies = cookie_match.group(1)
 
-    try:
-        # Step 1 — load login page to get initial CSRF token
-        get_resp = _session.get(f"{BASE_URL}/login", timeout=15)
-        get_resp.raise_for_status()
+        xsrf_match = re.search(r"XSRF-TOKEN=([^;]+)", cookies)
+        session_match = re.search(r"laravel_session=([^;]+)", cookies)
 
-        # Extract _token hidden input (Laravel CSRF)
-        token_match = re.search(r'<input[^>]+name=["\']_token["\'][^>]+value=["\']([^"\']+)["\']', get_resp.text)
-        if not token_match:
-            # Also try the reverse attribute order
-            token_match = re.search(r'<input[^>]+value=["\']([^"\']+)["\'][^>]+name=["\']_token["\']', get_resp.text)
+        if xsrf_match:
+            xsrf = xsrf_match.group(1)
 
-        if not token_match:
-            print("AUTH ERROR: Could not find _token on login page")
-            return False
+        if session_match:
+            session = session_match.group(1)
 
-        csrf_token = token_match.group(1)
+    csrf_match = re.search(r"x-csrf-token: ([^']+)", curl_text)
+    if csrf_match:
+        csrf = csrf_match.group(1)
 
-        # Step 2 — POST credentials
-        post_resp = _session.post(
-            f"{BASE_URL}/login",
-            data={
-                "_token": csrf_token,
-                "username": ADMIN_USERNAME,
-                "password": ADMIN_PASSWORD,
-            },
-            timeout=15,
-            allow_redirects=True,
-        )
-
-        # A successful Laravel login redirects to dashboard (non-login URL)
-        if "/login" in post_resp.url:
-            print("AUTH ERROR: Still on login page after POST — check credentials")
-            return False
-
-        _last_auth_time = time.time()
-        print(f"AUTH: Login successful at {time.strftime('%H:%M:%S')}")
-        return True
-
-    except Exception as e:
-        print(f"AUTH EXCEPTION: {e}")
-        return False
-
-
-def ensure_authed(force=False):
-    """
-    Call this before any panel request.
-    Re-authenticates if:
-      - never logged in yet
-      - forced (e.g. after a 401/419 response)
-      - token TTL has elapsed
-    Thread-safe.
-    """
-    with _session_lock:
-        age = time.time() - _last_auth_time
-        if force or _last_auth_time == 0 or age > AUTH_TTL:
-            return _do_login()
-        return True
-
-
-# Authenticate at startup so the first real request is instant
-threading.Thread(target=ensure_authed, daemon=True).start()
+    return xsrf, session, csrf
 
 # =========================
 # CLEAN NAME
 # =========================
-
 def extract_name(raw):
     if not raw:
         return ""
@@ -120,104 +62,84 @@ def extract_name(raw):
     return clean.lower()
 
 # =========================
-# GET ALL USERS (PAGINATION + AUTO RETRY)
+# GET ALL USERS (PAGINATION)
 # =========================
-
 def get_users():
     url = f"{BASE_URL}/lines/data"
 
-    def _fetch(start=0):
-        all_users = []
-        length = 100
+    headers = {
+        "accept": "application/json, text/javascript, */*; q=0.01",
+        "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "x-csrf-token": TOKENS["csrf"],
+        "x-requested-with": "XMLHttpRequest",
+    }
 
-        while True:
-            payload = {
-                "draw": 1,
-                "start": start,
-                "length": length,
-                "search[value]": "",
-                "id": "users",
-                "reseller": RESELLER_ID,
-            }
+    cookies = {
+        "XSRF-TOKEN": TOKENS["xsrf"],
+        "laravel_session": TOKENS["session"]
+    }
 
-            # requests.Session carries cookies automatically — no manual headers needed
-            # but the panel also needs the XSRF-TOKEN as a header (Laravel CSRF for AJAX)
-            xsrf = _session.cookies.get("XSRF-TOKEN", "")
+    all_users = []
+    start = 0
+    length = 100
 
-            r = _session.post(
-                url,
-                data=payload,
-                headers={
-                    "accept": "application/json, text/javascript, */*; q=0.01",
-                    "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
-                    "x-csrf-token": requests.utils.unquote(xsrf),  # cookie is URL-encoded
-                    "x-requested-with": "XMLHttpRequest",
-                },
-                timeout=20,
-            )
+    while True:
+        payload = {
+            "draw": 1,
+            "start": start,
+            "length": length,
+            "search[value]": "",
+            "id": "users",
+            "reseller": 59
+        }
 
-            # 401 or 419 = session expired mid-flight
-            if r.status_code in (401, 419):
-                return None  # signal caller to re-auth
+        r = requests.post(url, headers=headers, cookies=cookies, data=payload)
 
-            if r.status_code != 200:
-                print(f"USERS ERROR {r.status_code}: {r.text[:200]}")
-                return []
+        if r.status_code != 200:
+            print("ERROR:", r.text)
+            return []
 
-            try:
-                data = r.json()
-                users = data.get("data", [])
-            except Exception as e:
-                print(f"USERS JSON ERROR: {e} — {r.text[:200]}")
-                return []
+        try:
+            data = r.json()
+            users = data.get("data", [])
+        except:
+            print("JSON ERROR:", r.text)
+            return []
 
-            if not users:
-                break
+        if not users:
+            break
 
-            all_users.extend(users)
+        all_users.extend(users)
 
-            if len(users) < length:
-                break
+        if len(users) < length:
+            break
 
-            start += length
+        start += length
 
-        return all_users
-
-    # First attempt
-    ensure_authed()
-    result = _fetch()
-
-    # If session expired mid-request, re-auth once and retry
-    if result is None:
-        print("Session expired — re-authenticating...")
-        if ensure_authed(force=True):
-            result = _fetch()
-        else:
-            result = []
-
-    if result is None:
-        result = []
-
-    print(f"Loaded {len(result)} users")
-    return result
+    print(f"Loaded {len(all_users)} users")
+    return all_users
 
 # =========================
 # FIND USER (SAFE MATCHING)
 # =========================
-
 def find_user(search, users):
     search = " ".join(search.lower().strip().split())
     parts = search.split()
+
     matches = []
 
     for user in users:
         note = extract_name(user.get("admin_notes_show", ""))
+
         if not note:
             continue
 
+        # FULL NAME MATCH
         if len(parts) >= 2:
             if search in note:
                 matches.append(user)
+
+        # LAST NAME ONLY
         else:
             name_parts = note.split()
             if parts[0] == name_parts[-1]:
@@ -228,13 +150,12 @@ def find_user(search, users):
 # =========================
 # MAIN PAGE (CUSTOMER)
 # =========================
-
 @app.route("/", methods=["GET", "POST"])
 def home():
     result = ""
 
     if request.method == "POST":
-        name = request.form.get("name", "").strip()
+        name = request.form.get("name")
 
         users = get_users()
 
@@ -248,16 +169,19 @@ def home():
 
             elif len(matches) > 1:
                 names = [extract_name(u.get("admin_notes_show")) for u in matches[:5]]
+
                 result = "<b>Multiple matches found:</b><br>"
                 for n in names:
                     result += f"- {n}<br>"
-                result += "<br>⚠️ Please enter your FULL first and last name."
+
+                result += "<br>⚠️ Please enter FULL first and last name."
 
             else:
                 u = matches[0]
-                username = u.get("username", "")
-                password = u.get("password", "")
-                exp = u.get("exp_date", "")
+
+                username = u.get("username")
+                password = u.get("password")
+                exp = u.get("exp_date")
 
                 result = f"""
                 <h3>Setup Instructions</h3>
@@ -276,73 +200,78 @@ def home():
                 <b>Password:</b> {password}<br>
                 <b>Expires:</b> {exp}<br><br>
 
-                If this does not work, please contact support.
+                <hr>
+
+                <b>⚠️ Still not working?</b><br><br>
+
+                Some internet providers (Spectrum, Xfinity, AT&T, etc.) block IPTV connections by default.<br><br>
+
+                👉 <b>Click here for ISP unblock guide:</b><br>
+                <a href="https://epg.run/unblock/" target="_blank">
+                https://epg.run/unblock/
+                </a><br><br>
+
+                Select your provider and follow the steps to disable security blocking.<br><br>
+
+                If you still need help after this, please contact support.
                 """
 
     return render_template_string("""
     <h2>TiviMate Support</h2>
+
     <h4>⚠️ Enter your FULL first and last name</h4>
+
     <form method="post">
         <input name="name" placeholder="John Smith" required>
         <button type="submit">Lookup</button>
     </form>
+
     <p>{{result|safe}}</p>
     """, result=result)
 
 # =========================
-# ADMIN PAGE — now just shows auth status; no more manual cURL needed
+# ADMIN PAGE
 # =========================
-
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
     message = ""
 
     if request.method == "POST":
-        password = request.form.get("password", "")
+        password = request.form.get("password")
 
-        if password != APP_PASSWORD:
+        if password != ADMIN_PASSWORD:
             return "❌ Unauthorized"
 
-        action = request.form.get("action", "")
+        curl = request.form.get("curl")
 
-        if action == "reauth":
-            success = ensure_authed(force=True)
-            if success:
-                message = "✅ Re-authentication successful"
-            else:
-                message = "❌ Re-authentication failed — check credentials in config"
+        xsrf, session, csrf = parse_curl(curl)
 
-    # Show current session age
-    age = int(time.time() - _last_auth_time) if _last_auth_time else None
-    if age is None:
-        auth_status = "⚠️ Not authenticated yet"
-    elif age < AUTH_TTL:
-        mins = age // 60
-        auth_status = f"✅ Authenticated ({mins}m ago)"
-    else:
-        auth_status = f"⚠️ Token may be stale ({age // 60}m ago)"
+        if xsrf and session and csrf:
+            TOKENS["xsrf"] = xsrf
+            TOKENS["session"] = session
+            TOKENS["csrf"] = csrf
+            message = "✅ Tokens updated successfully"
+        else:
+            message = "❌ Failed to extract tokens"
 
     return render_template_string("""
-    <h2>Admin Panel</h2>
-
-    <p>Auth Status: <b>{{auth_status}}</b></p>
+    <h2>Admin - Paste Full cURL</h2>
 
     <form method="post">
         Password:<br>
         <input type="password" name="password"><br><br>
-        <input type="hidden" name="action" value="reauth">
-        <button type="submit">Force Re-authenticate</button>
+
+        Paste full cURL:<br>
+        <textarea name="curl" rows="10" cols="100"></textarea><br><br>
+
+        <button type="submit">Update Tokens</button>
     </form>
 
     <p>{{message}}</p>
-
-    <hr>
-    <small>Credentials are set in config at the top of the script. No more cURL paste needed.</small>
-    """, auth_status=auth_status, message=message)
+    """, message=message)
 
 # =========================
-# RUN (LOCAL / RENDER)
+# RUN
 # =========================
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5050)

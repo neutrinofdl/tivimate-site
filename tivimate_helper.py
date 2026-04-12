@@ -11,8 +11,8 @@ app = Flask(__name__)
 # =========================
 
 BASE_URL = "https://alt.sanctumpanel.com"
-ADMIN_USERNAME = "your_panel_username"   # 🔐 Panel login username
-ADMIN_PASSWORD = "your_panel_password"   # 🔐 Panel login password
+ADMIN_USERNAME = "mattdrudge"   # 🔐 Panel login username
+ADMIN_PASSWORD = "B4-&G>e3509K"   # 🔐 Panel login password
 APP_PASSWORD   = "TiviMateAdmin!2026"    # 🔐 Password for /admin page
 RESELLER_ID    = 59
 

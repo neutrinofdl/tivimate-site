@@ -9,13 +9,20 @@ app = Flask(__name__)
 # =========================
 
 BASE_URL = "https://alt.sanctumpanel.com"
-ADMIN_PASSWORD = "TiviMateAdmin!2026"  # 🔐 CHANGE THIS
+ADMIN_PASSWORD = "CHANGE_THIS_PASSWORD"  # 🔐 CHANGE THIS
 
 TOKENS = {
     "xsrf": "",
     "session": "",
     "csrf": ""
 }
+
+# =========================
+# KEEP ALIVE (UPTIMEROBOT)
+# =========================
+@app.route("/ping")
+def ping():
+    return "OK"
 
 # =========================
 # PARSE CURL (AUTO TOKEN EXTRACTION)
@@ -127,7 +134,7 @@ def find_user(search, users):
         if not note:
             continue
 
-        # FULL NAME ONLY
+        # FULL NAME MATCH
         if len(parts) >= 2:
             if search in note:
                 matches.append(user)
@@ -141,7 +148,7 @@ def find_user(search, users):
     return matches
 
 # =========================
-# MAIN PAGE
+# MAIN PAGE (CUSTOMER)
 # =========================
 @app.route("/", methods=["GET", "POST"])
 def home():
@@ -193,7 +200,20 @@ def home():
                 <b>Password:</b> {password}<br>
                 <b>Expires:</b> {exp}<br><br>
 
-                If this does not work, please contact support.
+                <hr>
+
+                <b>⚠️ Still not working?</b><br><br>
+
+                Some internet providers (Spectrum, Xfinity, AT&T, etc.) block IPTV connections by default.<br><br>
+
+                👉 <b>Click here for ISP unblock guide:</b><br>
+                <a href="https://epg.run/unblock/" target="_blank">
+                https://epg.run/unblock/
+                </a><br><br>
+
+                Select your provider and follow the steps to disable security blocking.<br><br>
+
+                If you still need help after this, please contact support.
                 """
 
     return render_template_string("""
@@ -206,11 +226,18 @@ def home():
         <button type="submit">Lookup</button>
     </form>
 
+    <br>
+
+    <b>Having trouble connecting?</b><br>
+    <a href="https://epg.run/unblock/" target="_blank">
+    Click here for ISP unblock guide
+    </a>
+
     <p>{{result|safe}}</p>
     """, result=result)
 
 # =========================
-# ADMIN PAGE (SECURE + CURL INPUT)
+# ADMIN PAGE (SECURE)
 # =========================
 @app.route("/admin", methods=["GET", "POST"])
 def admin():
@@ -230,9 +257,9 @@ def admin():
             TOKENS["xsrf"] = xsrf
             TOKENS["session"] = session
             TOKENS["csrf"] = csrf
-            message = "✅ Tokens extracted and updated!"
+            message = "✅ Tokens updated successfully"
         else:
-            message = "❌ Failed to extract tokens — check cURL"
+            message = "❌ Failed to extract tokens"
 
     return render_template_string("""
     <h2>Admin - Paste Full cURL</h2>

@@ -371,7 +371,11 @@ def home():
                 <b>Username:</b> {username}<br>
                 <b>Password:</b> {password}<br>
                 <b>Expires:</b> {exp}<br><br>
-                If this does not work, please contact support.
+                If this does not work, please contact support.<br><br>
+                <hr>
+                <b>&#128276; Getting an "Error Processing Playlist"?</b><br>
+                Your internet provider may be blocking the stream. Visit the link below, find your provider, and follow the instructions to fix it:<br><br>
+                <a href="https://epg.run/unblock/" target="_blank" style="font-size:1.1em;">&#128279; https://epg.run/unblock/</a>
                 """
 
     return render_template_string("""

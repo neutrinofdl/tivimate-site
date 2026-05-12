@@ -328,59 +328,84 @@ def find_user(search, users):
 # MAIN PAGE
 # =========================
 
+def _build_instructions(username, password, exp):
+    return f"""
+    <h3>Setup Instructions</h3>
+    1. Go to settings on your onn homescreen (gear icon very top)<br>
+    2. Go to All Settings<br>
+    3. Applications &rarr; find ZAKTV and/or TiviMate<br>
+    4. Uninstall one or both (if present)<br>
+    5. Open Downloader app<br>
+    6. Enter code: <b>8101812</b><br>
+    7. You will see a grey box that says "No preview available" — click the blue <b>Download</b> button<br>
+    8. It will say "Google Drive has detected issues with your download" — click the <b>Download Anyway</b> button at the bottom<br>
+    9. Install and open TiviMate<br>
+    10. Click <b>Add Playlist</b><br>
+    11. Choose <b>Service-S</b><br><br>
+    <b>Username:</b> {username}<br>
+    <b>Password:</b> {password}<br>
+    <b>Expires:</b> {exp}<br><br>
+    If this does not work, please contact support.<br><br>
+    <b>&#128227; Join our Facebook group for updates and support:</b><br>
+    <a href="https://www.facebook.com/share/g/1Fv6ZeWn2N/" target="_blank" style="font-size:1.1em;">&#128279; Join the Group</a><br><br>
+    <hr>
+    <b>&#128276; Getting an "Error Processing Playlist"?</b><br>
+    Your internet provider may be blocking the stream. Visit the link below, find your provider, and follow the instructions to fix it:<br><br>
+    <a href="https://epg.run/unblock/" target="_blank" style="font-size:1.1em;">&#128279; https://epg.run/unblock/</a>
+    """
+
 @app.route("/", methods=["GET", "POST"])
 def home():
     result = ""
 
     if request.method == "POST":
-        name  = request.form.get("name", "").strip()
-        users = search_users(name)
+        selected = request.form.get("select_user", "").strip()
+        name = request.form.get("name", "").strip()
 
-        if not users and users is not None:
-            result = "❌ No match found. Please check your name spelling and try again."
-        elif users is None:
-            result = "❌ System error — please try again later"
-        else:
-            matches = find_user(name, users)
-
-            if not matches:
-                result = "❌ No match found. Please check your name spelling and try again."
-            elif len(matches) > 1:
-                names  = [extract_name(u.get("admin_notes_show")) for u in matches[:5]]
-                result = "<b>Multiple matches found:</b><br>"
-                for n in names:
-                    result += f"- {n}<br>"
-                result += "<br>⚠️ Please enter your FULL first and last name."
-            else:
-                u        = matches[0]
+        if selected:
+            # User clicked a name from the multiple-match list
+            users = search_users(selected)
+            u = None
+            if users:
+                for candidate in users:
+                    if candidate.get("username", "") == selected:
+                        u = candidate
+                        break
+            if u:
                 username = u.get("username", "")
                 password = u.get("password", "")
-                exp      = u.get("exp_date_show", u.get("exp_date", ""))
+                exp = u.get("exp_date_show", u.get("exp_date", ""))
+                result = _build_instructions(username, password, exp)
+            else:
+                result = "❌ System error — please try again later"
 
-                result = f"""
-                <h3>Setup Instructions</h3>
-                1. Go to settings on your onn homescreen (gear icon very top)<br>
-                2. Go to All Settings<br>
-                3. Applications &rarr; find ZAKTV and/or TiviMate<br>
-                4. Uninstall one or both (if present)<br>
-                5. Open Downloader app<br>
-                6. Enter code: <b>8101812</b><br>
-                7. You will see a grey box that says "No preview available" — click the blue <b>Download</b> button<br>
-                8. It will say "Google Drive has detected issues with your download" — click the <b>Download Anyway</b> button at the bottom<br>
-                9. Install and open TiviMate<br>
-                10. Click <b>Add Playlist</b><br>
-                11. Choose <b>Service-S</b><br><br>
-                <b>Username:</b> {username}<br>
-                <b>Password:</b> {password}<br>
-                <b>Expires:</b> {exp}<br><br>
-                If this does not work, please contact support.<br><br>
-                <b>&#128227; Join our Facebook group for updates and support:</b><br>
-                <a href="https://www.facebook.com/share/g/1Fv6ZeWn2N/" target="_blank" style="font-size:1.1em;">&#128279; Join the Group</a><br><br>
-                <hr>
-                <b>&#128276; Getting an "Error Processing Playlist"?</b><br>
-                Your internet provider may be blocking the stream. Visit the link below, find your provider, and follow the instructions to fix it:<br><br>
-                <a href="https://epg.run/unblock/" target="_blank" style="font-size:1.1em;">&#128279; https://epg.run/unblock/</a>
-                """
+        elif name:
+            users = search_users(name)
+
+            if not users and users is not None:
+                result = "❌ No match found. Please check your name spelling and try again."
+            elif users is None:
+                result = "❌ System error — please try again later"
+            else:
+                matches = find_user(name, users)
+
+                if not matches:
+                    result = "❌ No match found. Please check your name spelling and try again."
+                elif len(matches) > 1:
+                    result = "<b>Multiple matches found — please select yours:</b><br><br>"
+                    for u in matches[:5]:
+                        n = extract_name(u.get("admin_notes_show", ""))
+                        uname = u.get("username", "")
+                        result += f'<form method="POST" style="display:inline-block; margin: 4px;">'
+                        result += f'<input type="hidden" name="select_user" value="{uname}">'
+                        result += f'<button type="submit" style="padding:10px 20px; font-size:1.1em; cursor:pointer; border-radius:8px; border:1px solid #ccc; background:#f0f0f0;">{n}</button>'
+                        result += f'</form>'
+                else:
+                    u = matches[0]
+                    username = u.get("username", "")
+                    password = u.get("password", "")
+                    exp = u.get("exp_date_show", u.get("exp_date", ""))
+                    result = _build_instructions(username, password, exp)
 
     return render_template_string("""
     <h2>TiviMate Support</h2>

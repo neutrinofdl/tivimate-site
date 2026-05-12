@@ -365,9 +365,11 @@ def home():
                 4. Uninstall one or both (if present)<br>
                 5. Open Downloader app<br>
                 6. Enter code: <b>8101812</b><br>
-                7. Install and open TiviMate<br>
-                8. Click <b>Add Playlist</b><br>
-                9. Choose <b>Service-S</b><br><br>
+                7. You will see a grey box that says "No preview available" — click the blue <b>Download</b> button<br>
+                8. It will say "Google Drive has detected issues with your download" — click the <b>Download Anyway</b> button at the bottom<br>
+                9. Install and open TiviMate<br>
+                10. Click <b>Add Playlist</b><br>
+                11. Choose <b>Service-S</b><br><br>
                 <b>Username:</b> {username}<br>
                 <b>Password:</b> {password}<br>
                 <b>Expires:</b> {exp}<br><br>

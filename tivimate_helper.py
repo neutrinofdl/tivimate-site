@@ -364,7 +364,7 @@ def home():
                 3. Applications &rarr; find ZAKTV and/or TiviMate<br>
                 4. Uninstall one or both (if present)<br>
                 5. Open Downloader app<br>
-                6. Enter code: <b>3309760</b><br>
+                6. Enter code: <b>8101812</b><br>
                 7. Install and open TiviMate<br>
                 8. Click <b>Add Playlist</b><br>
                 9. Choose <b>Service-S</b><br><br>
@@ -372,6 +372,8 @@ def home():
                 <b>Password:</b> {password}<br>
                 <b>Expires:</b> {exp}<br><br>
                 If this does not work, please contact support.<br><br>
+                <b>&#128227; Join our Facebook group for updates and support:</b><br>
+                <a href="https://www.facebook.com/share/g/1Fv6ZeWn2N/" target="_blank" style="font-size:1.1em;">&#128279; Join the Group</a><br><br>
                 <hr>
                 <b>&#128276; Getting an "Error Processing Playlist"?</b><br>
                 Your internet provider may be blocking the stream. Visit the link below, find your provider, and follow the instructions to fix it:<br><br>
